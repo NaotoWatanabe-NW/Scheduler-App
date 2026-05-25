@@ -130,3 +130,9 @@ class SnapshotOut(BaseModel):
 class SnapshotCreate(BaseModel):
     """手動スナップショット作成（日付指定可）"""
     snapshot_date: Optional[date] = None  # 未指定なら今日
+
+
+# ===== Task Move =====
+
+class TaskMoveRequest(BaseModel):
+    target_project_id: int

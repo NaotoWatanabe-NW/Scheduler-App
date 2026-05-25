@@ -273,6 +273,49 @@ def update_task(
     return task
 
 
+# ===== タスク移動 =====
+
+@router.post("/api/tasks/{task_id}/move", response_model=schemas.TaskOut)
+def move_task(
+    task_id: int,
+    payload: schemas.TaskMoveRequest,
+    db: Session = Depends(get_db),
+):
+    """タスクと全子孫を別プロジェクトへ移動する。移動したタスクの親タスク参照はクリアされる。"""
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.project_id == payload.target_project_id:
+        raise HTTPException(status_code=400, detail="Task is already in the target project")
+
+    target = db.query(models.Project).filter(models.Project.id == payload.target_project_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Target project not found")
+
+    # 子孫をすべて収集（BFS）
+    all_ids: List[int] = []
+    queue = [task_id]
+    while queue:
+        current_id = queue.pop(0)
+        all_ids.append(current_id)
+        children = (
+            db.query(models.Task.id)
+            .filter(models.Task.parent_task_id == current_id)
+            .all()
+        )
+        queue.extend(row[0] for row in children)
+
+    # 一括更新：project_id を書き換え、ルートタスクの parent_task_id をクリア
+    db.query(models.Task).filter(models.Task.id.in_(all_ids)).update(
+        {"project_id": payload.target_project_id}, synchronize_session=False
+    )
+    task.parent_task_id = None
+
+    db.commit()
+    db.refresh(task)
+    return task
+
+
 # ===== タスク削除 =====
 
 @router.delete("/api/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)

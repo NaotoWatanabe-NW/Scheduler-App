@@ -91,6 +91,7 @@ function openTaskModal(options) {
           </div>
           <div class="modal__footer">
             ${isEdit ? `<button type="button" class="btn btn--danger" id="btn-delete">削除</button>` : ""}
+            ${isEdit ? `<button type="button" class="btn btn--secondary" id="btn-move">別プロジェクトへ移動</button>` : ""}
             <button type="button" class="btn" id="modal-cancel">キャンセル</button>
             <button type="submit" class="btn btn--primary">${isEdit ? "更新" : "作成"}</button>
           </div>
@@ -114,6 +115,10 @@ function openTaskModal(options) {
       } catch (e) {
         util.toast("削除エラー: " + e.message);
       }
+    });
+
+    document.getElementById("btn-move").addEventListener("click", async () => {
+      await openMoveProjectDialog({ task, onMoved: () => { close(); if (onSaved) onSaved(); } });
     });
   }
 
@@ -149,6 +154,73 @@ function openTaskModal(options) {
       if (onSaved) onSaved();
     } catch (err) {
       util.toast("エラー: " + err.message);
+    }
+  });
+}
+
+/**
+ * プロジェクト選択ダイアログを開き、移動先を確定したらAPIを呼ぶ
+ */
+async function openMoveProjectDialog({ task, onMoved }) {
+  const mount = document.getElementById("modal-mount");
+
+  let projects;
+  try {
+    projects = await api.get("/projects");
+  } catch (e) {
+    util.toast("プロジェクト一覧の取得に失敗しました: " + e.message);
+    return;
+  }
+
+  const candidates = projects.filter(p => p.id !== task.project_id);
+  if (candidates.length === 0) {
+    util.toast("移動先となるプロジェクトがありません");
+    return;
+  }
+
+  mount.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal modal--narrow">
+        <div class="modal__header">
+          <h3>移動先プロジェクトを選択</h3>
+          <button class="modal__close" id="move-close">×</button>
+        </div>
+        <div class="move-dialog__body">
+          <p class="move-dialog__task-name">「${util.escapeHtml(task.name)}」を移動します。<br>子タスクもすべて一緒に移動されます。</p>
+          <ul class="move-dialog__list" id="move-project-list">
+            ${candidates.map(p => `
+              <li>
+                <button class="move-dialog__item" data-project-id="${p.id}">
+                  ${util.escapeHtml(p.name)}
+                </button>
+              </li>
+            `).join("")}
+          </ul>
+        </div>
+        <div class="modal__footer">
+          <button type="button" class="btn" id="move-cancel">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const closeDialog = () => { mount.innerHTML = ""; };
+  document.getElementById("move-close").addEventListener("click", closeDialog);
+  document.getElementById("move-cancel").addEventListener("click", closeDialog);
+
+  document.getElementById("move-project-list").addEventListener("click", async (e) => {
+    const btn = e.target.closest(".move-dialog__item");
+    if (!btn) return;
+    const targetProjectId = Number(btn.dataset.projectId);
+    const targetName = btn.textContent.trim();
+    if (!util.confirm(`タスク「${task.name}」を「${targetName}」に移動しますか？\n（子タスクも一緒に移動されます）`)) return;
+    try {
+      await api.post(`/tasks/${task.id}/move`, { target_project_id: targetProjectId });
+      util.toast(`「${targetName}」に移動しました`);
+      closeDialog();
+      if (onMoved) onMoved();
+    } catch (err) {
+      util.toast("移動エラー: " + err.message);
     }
   });
 }

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Task App - ToDo</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20260517">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Task App</h1>
+    <nav>
+      <a href="/">プロジェクト</a>
+      <a href="/todo">ToDo</a>
+      <a href="/members">メンバー</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="toolbar">
+      <h2>ToDo リスト</h2>
+      <div class="toolbar__right">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-muted);">
+          担当者
+          <select id="assignee-filter" style="padding:4px 8px;border:1px solid var(--color-border-strong);border-radius:6px;">
+            <option value="all">全担当者</option>
+            <option value="unassigned">未割当</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">
+      進捗100%未満かつ開始日が今日以前のタスクを表示しています（完了済みプロジェクトは除外）。
+    </div>
+
+    <div id="todo-list">
+      <div class="empty-state">読み込み中...</div>
+    </div>
+  </main>
+
+  <script src="/static/js/util.js?v=20260517"></script>
+  <script src="/static/js/api.js?v=20260517"></script>
+  <script src="/static/js/todo.js?v=20260517"></script>
+</body>
+</html>

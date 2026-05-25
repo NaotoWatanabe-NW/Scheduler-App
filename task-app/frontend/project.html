@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Task App - ガントチャート</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20260517">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Task App</h1>
+    <nav>
+      <a href="/">プロジェクト</a>
+      <a href="/todo">ToDo</a>
+      <a href="/members">メンバー</a>
+    </nav>
+  </header>
+
+  <main class="container container--wide">
+    <div class="toolbar">
+      <div class="toolbar__left">
+        <a href="/" class="btn btn--sm">← 一覧</a>
+        <h2 id="project-title" style="margin:0">読み込み中...</h2>
+      </div>
+      <div class="toolbar__right">
+        <button class="btn btn--sm" id="btn-snapshots">スナップショット管理</button>
+        <button class="btn btn--sm" id="btn-snapshot">今すぐスナップ</button>
+        <button class="btn btn--primary btn--sm" id="btn-new-task">+ タスク追加</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;padding:10px 16px;">
+      <div class="gantt-controls">
+        <label>ズーム
+          <select id="zoom-select">
+            <option value="day">日</option>
+            <option value="week" selected>週</option>
+            <option value="month">月</option>
+          </select>
+        </label>
+        <label>担当者
+          <select id="assignee-filter">
+            <option value="all">全担当者</option>
+          </select>
+        </label>
+        <label>
+          <input type="checkbox" id="toggle-inazuma" checked>
+          イナヅマ線表示
+        </label>
+        <label>表示本数
+          <input type="number" id="snapshot-count" value="4" min="1" max="20">
+        </label>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn--sm" id="btn-expand-all" title="全タスクを展開">全展開</button>
+          <button class="btn btn--sm" id="btn-collapse-all" title="全タスクを折りたたみ">全折りたたみ</button>
+        </div>
+        <span id="project-period" style="margin-left:auto;color:var(--color-text-muted);font-size:12px;"></span>
+      </div>
+    </div>
+
+    <div class="gantt-legend">
+      <div class="gantt-legend__item">
+        <span class="gantt-legend__swatch" style="background:#888780;opacity:0.4"></span>
+        <span class="gantt-legend__swatch" style="background:#888780;margin-left:-26px"></span>
+        <span style="margin-left:4px">タスクバー（薄色=全体、濃色=進捗）</span>
+      </div>
+      <div class="gantt-legend__item">
+        <span class="gantt-legend__milestone"></span>
+        <span>マイルストーン</span>
+      </div>
+      <div class="gantt-legend__item">
+        <span class="gantt-legend__inazuma"></span>
+        <span>イナヅマ線（左に凹む=遅延、右に出る=先行）</span>
+      </div>
+    </div>
+
+    <div class="gantt-layout">
+      <div class="gantt-task-pane">
+        <div class="gantt-task-pane__header">
+          <div>タスク名</div>
+          <div>担当</div>
+          <div>進捗</div>
+        </div>
+        <div id="task-rows"></div>
+      </div>
+      <div class="gantt-chart-pane" id="gantt-chart"></div>
+    </div>
+  </main>
+
+  <div id="modal-mount"></div>
+
+  <script src="/static/js/util.js?v=20260517"></script>
+  <script src="/static/js/api.js?v=20260517"></script>
+  <script src="/static/js/gantt.js?v=20260517"></script>
+  <script src="/static/js/editor.js?v=20260517"></script>
+  <script src="/static/js/snapshots.js?v=20260517"></script>
+  <script src="/static/js/project.js?v=20260517"></script>
+</body>
+</html>

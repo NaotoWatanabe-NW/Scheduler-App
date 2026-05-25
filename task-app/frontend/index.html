@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Task App - プロジェクト</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20260517">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Task App</h1>
+    <nav>
+      <a href="/">プロジェクト</a>
+      <a href="/todo">ToDo</a>
+      <a href="/members">メンバー</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="toolbar">
+      <h2>プロジェクト一覧</h2>
+      <div class="toolbar__right">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-text-muted);">
+          <input type="checkbox" id="toggle-completed">
+          完了済みも表示
+        </label>
+        <button class="btn btn--primary" id="btn-new-project">+ 新規プロジェクト</button>
+      </div>
+    </div>
+
+    <div id="project-list">
+      <div class="empty-state">読み込み中...</div>
+    </div>
+  </main>
+
+  <div id="modal-mount"></div>
+
+  <script src="/static/js/util.js?v=20260517"></script>
+  <script src="/static/js/api.js?v=20260517"></script>
+  <script src="/static/js/index.js?v=20260517"></script>
+</body>
+</html>

@@ -90,18 +90,28 @@ function renderTodoItem(task, memberMap) {
   } else if (daysRemaining === 0) {
     dueClass += " todo-item__due--today";
     dueText = "本日期限";
-  } else if (daysRemaining <= 3) {
-    dueClass += " todo-item__due--soon";
-    dueText = `残り${daysRemaining}日`;
   } else {
-    dueText = `残り${daysRemaining}日`;
+    // 営業日ベースの残日数を併記
+    const bizDays = util.businessDaysBetween(util.today(), util.parseDate(task.end_date));
+    if (daysRemaining <= 3) dueClass += " todo-item__due--soon";
+    dueText = `残り${daysRemaining}日（営業日${bizDays}日）`;
   }
 
   const milestoneMark = task.is_milestone ? '<span style="color:var(--color-milestone);">◆ </span>' : '';
 
+  // 計画進捗に対して遅れているタスクには遅延バッジ
+  const delayedBadge = util.isDelayed(task)
+    ? `<span class="todo-item__delay" title="計画 ${util.plannedProgress(task.start_date, task.end_date)}% に対して遅れ">遅延</span>`
+    : "";
+
+  const descHtml = task.description
+    ? `<div class="todo-item__desc">${util.escapeHtml(task.description)}</div>`
+    : "";
+
   return `
     <a class="todo-item" href="/projects/${task.project_id}?openTask=${task.id}">
-      <div class="todo-item__name">${milestoneMark}${util.escapeHtml(task.name)}</div>
+      <div class="todo-item__name">${milestoneMark}${util.escapeHtml(task.name)}${delayedBadge}</div>
+      ${descHtml}
       <div class="todo-item__meta">
         ${assigneeHtml}
         <span class="todo-item__progress">進捗 ${task.progress}%</span>

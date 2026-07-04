@@ -110,6 +110,21 @@ function renderDateHeader(layout, options) {
   // 日付ラベル：ズームレベルに応じて粒度を変える
   const totalDays = util.daysBetween(viewStart, viewEnd) + 1;
 
+  // 週末・祝日の網掛け（日/週ズームのみ。月ズームは細かすぎるので省略）
+  if (zoomLevel === "day" || zoomLevel === "week") {
+    for (let i = 0; i < totalDays; i++) {
+      const d = util.addDays(viewStart, i);
+      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+      const isHoliday = util.isJpHoliday(d);
+      if (!isWeekend && !isHoliday) continue;
+      g.appendChild(svgEl("rect", {
+        x: i * dayWidth, y: LAYOUT.HEADER_HEIGHT,
+        width: dayWidth, height: layout.totalHeight - LAYOUT.HEADER_HEIGHT,
+        fill: isHoliday ? "#f6ece5" : "#f5f3eb",
+      }));
+    }
+  }
+
   if (zoomLevel === "day") {
     // 日単位：月の境界に縦線、各日にラベル
     for (let i = 0; i < totalDays; i++) {
@@ -126,21 +141,13 @@ function renderDateHeader(layout, options) {
           stroke: "#c0bcb0", "stroke-width": 1,
         }));
       }
-      // 日ラベル
+      // 日ラベル（祝日は赤系）
       g.appendChild(svgEl("text", {
         x: x + dayWidth / 2, y: 44,
-        "font-size": 11, fill: "#666",
+        "font-size": 11,
+        fill: util.isJpHoliday(d) ? "#b0563c" : "#666",
         "text-anchor": "middle",
       }, [String(d.getDate())]));
-
-      // 週末の薄い背景
-      if (d.getDay() === 0 || d.getDay() === 6) {
-        g.appendChild(svgEl("rect", {
-          x, y: LAYOUT.HEADER_HEIGHT,
-          width: dayWidth, height: layout.totalHeight - LAYOUT.HEADER_HEIGHT,
-          fill: "#f5f3eb",
-        }));
-      }
     }
   } else if (zoomLevel === "week") {
     // 週単位：月境界＋週ごとの目盛
@@ -246,6 +253,8 @@ function renderTaskRows(layout, options, members) {
     const barColor = task.assignee_id && memberColor[task.assignee_id]
       ? memberColor[task.assignee_id]
       : "#888780";
+    // 遅延判定: 実績進捗が計画進捗（経過日数割合）を下回っている
+    const delayed = util.isDelayed(task);
 
     if (task.is_milestone) {
       // マイルストーン: ◆
@@ -256,8 +265,8 @@ function renderTaskRows(layout, options, members) {
       const milestone = svgEl("polygon", {
         points,
         fill: "#993556",
-        stroke: "#4B1528",
-        "stroke-width": 1,
+        stroke: delayed ? "#e03131" : "#4B1528",
+        "stroke-width": delayed ? 2.5 : 1,
         class: "gantt-milestone",
         "data-task-id": task.id,
       });
@@ -269,12 +278,19 @@ function renderTaskRows(layout, options, members) {
         x: task.barX, y: barY,
         width: task.barWidth, height: LAYOUT.BAR_HEIGHT,
         rx: 3, ry: 3,
-        fill: barColor, opacity: 0.4,
-        stroke: barColor, "stroke-width": 0.5,
+        fill: barColor, "fill-opacity": 0.4,
+        stroke: delayed ? "#e03131" : barColor,
+        "stroke-width": delayed ? 1.8 : 0.5,
+        "stroke-opacity": delayed ? 1 : 0.4,
         "data-task-id": task.id,
         class: "gantt-bar-bg",
       });
       bgBar.style.cursor = "pointer";
+      if (delayed) {
+        bgBar.appendChild(svgEl("title", {}, [
+          `遅延: 計画 ${util.plannedProgress(task.start_date, task.end_date)}% に対して実績 ${task.progress}%`,
+        ]));
+      }
       g.appendChild(bgBar);
 
       const progressWidth = task.barWidth * (task.progress / 100);
@@ -304,6 +320,181 @@ function renderTaskRows(layout, options, members) {
   }
 
   return g;
+}
+
+// ===== 依存関係の矢印描画 =====
+
+/**
+ * 先行→後続の依存関係を矢印で描画する。
+ * 両端のタスクが表示中（フィルタ・折りたたみで隠れていない）の場合のみ描く。
+ * @param {Array} dependencies [{id, predecessor_id, successor_id}]
+ */
+function renderDependencyArrows(dependencies, layout) {
+  const g = svgEl("g", { class: "gantt-deps" });
+  const taskMap = {};
+  layout.tasks.forEach(t => { taskMap[t.id] = t; });
+
+  const color = "#5b7d9e";
+  const OFF = 8; // バー端から折れ曲がるまでの距離
+
+  for (const dep of dependencies) {
+    const pred = taskMap[dep.predecessor_id];
+    const succ = taskMap[dep.successor_id];
+    if (!pred || !succ) continue;
+
+    const x1 = pred.barX + pred.barWidth;
+    const y1 = pred.y + LAYOUT.ROW_HEIGHT / 2;
+    const x2 = succ.barX;
+    const y2 = succ.y + LAYOUT.ROW_HEIGHT / 2;
+
+    let d;
+    if (x2 >= x1 + OFF * 2) {
+      // 後続バーが右にある通常ケース: L字
+      const mx = x1 + OFF;
+      d = `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2 - 3} ${y2}`;
+    } else {
+      // 後続バーが左に食い込むケース: 行間を通って迂回
+      const dir = y2 > y1 ? 1 : -1;
+      const my = y1 + dir * (LAYOUT.ROW_HEIGHT / 2);
+      d = `M ${x1} ${y1} L ${x1 + OFF} ${y1} L ${x1 + OFF} ${my} `
+        + `L ${x2 - OFF} ${my} L ${x2 - OFF} ${y2} L ${x2 - 3} ${y2}`;
+    }
+
+    g.appendChild(svgEl("path", {
+      d, fill: "none",
+      stroke: color, "stroke-width": 1.3,
+      "marker-end": "url(#dep-arrow)",
+      opacity: 0.8,
+    }));
+  }
+  return g;
+}
+
+// ===== ドラッグ操作（バー移動・伸縮） =====
+
+/**
+ * バー/マイルストーンにドラッグ操作を付与する。
+ * - バー中央をドラッグ → タスク全体を移動
+ * - バー左右端をドラッグ → 開始日/期日を伸縮
+ * - マイルストーンはドラッグで日付移動
+ * ドラッグ中はゴースト（半透明バー）と日付ラベルで移動先をプレビューし、
+ * ポインタを離した時点で options.onTaskUpdate(task, newStart, newEnd) を呼ぶ。
+ */
+function setupDragInteraction(svg, layout, options) {
+  const { dayWidth, onTaskUpdate } = options;
+  const EDGE = 7; // バー端から何pxを「伸縮ゾーン」にするか
+
+  // svg内のX座標に変換（スクロールはgetBoundingClientRectが吸収する）
+  const svgX = (clientX) => clientX - svg.getBoundingClientRect().left;
+
+  const hitMode = (task, clientX) => {
+    const x = svgX(clientX);
+    const edge = Math.min(EDGE, task.barWidth / 3);
+    if (x <= task.barX + edge) return "resize-start";
+    if (x >= task.barX + task.barWidth - edge) return "resize-end";
+    return "move";
+  };
+
+  svg.querySelectorAll(".gantt-bar-bg, .gantt-milestone").forEach(el => {
+    const task = layout.tasks.find(t => t.id === Number(el.dataset.taskId));
+    if (!task) return;
+    const isMilestone = el.classList.contains("gantt-milestone");
+
+    // ホバー中のカーソル表示（端=伸縮、中央=移動）
+    el.addEventListener("pointermove", (e) => {
+      if (isMilestone) { el.style.cursor = "grab"; return; }
+      const mode = hitMode(task, e.clientX);
+      el.style.cursor = mode === "move" ? "grab" : "ew-resize";
+    });
+
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const startClientX = e.clientX;
+      const mode = isMilestone ? "move" : hitMode(task, e.clientX);
+      const startD = util.parseDate(task.start_date);
+      const endD = util.parseDate(task.end_date);
+      const duration = util.daysBetween(startD, endD);
+      let deltaDays = 0;
+      let moved = false;
+      let ghost = null;
+      let ghostLabel = null;
+
+      const newDates = () => {
+        let ns = startD, ne = endD;
+        if (mode === "move") {
+          ns = util.addDays(startD, deltaDays);
+          ne = util.addDays(endD, deltaDays);
+        } else if (mode === "resize-start") {
+          ns = util.addDays(startD, deltaDays);
+        } else {
+          ne = util.addDays(endD, deltaDays);
+        }
+        return { ns, ne };
+      };
+
+      const onMove = (ev) => {
+        const dx = ev.clientX - startClientX;
+        if (!moved && Math.abs(dx) < 4) return;
+        moved = true;
+        el._dragConsumed = true; // ドラッグ後のclickでモーダルを開かない
+        deltaDays = Math.round(dx / dayWidth);
+        // 期間が反転しないようにクランプ
+        if (mode === "resize-start") deltaDays = Math.min(deltaDays, duration);
+        if (mode === "resize-end") deltaDays = Math.max(deltaDays, -duration);
+
+        let gx = task.barX;
+        let gw = task.barWidth;
+        if (mode === "move") {
+          gx += deltaDays * dayWidth;
+        } else if (mode === "resize-start") {
+          gx += deltaDays * dayWidth;
+          gw -= deltaDays * dayWidth;
+        } else {
+          gw += deltaDays * dayWidth;
+        }
+
+        if (!ghost) {
+          ghost = svgEl("rect", {
+            y: task.y + LAYOUT.BAR_Y_OFFSET - 2,
+            height: LAYOUT.BAR_HEIGHT + 4,
+            rx: 3, ry: 3,
+            fill: "#185fa5", "fill-opacity": 0.25,
+            stroke: "#185fa5", "stroke-width": 1.2, "stroke-dasharray": "4 2",
+            "pointer-events": "none",
+          });
+          ghostLabel = svgEl("text", {
+            y: task.y + 2,
+            "font-size": 11, fill: "#185fa5", "font-weight": 600,
+            "pointer-events": "none",
+          });
+          svg.appendChild(ghost);
+          svg.appendChild(ghostLabel);
+        }
+        ghost.setAttribute("x", gx);
+        ghost.setAttribute("width", Math.max(gw, LAYOUT.MIN_BAR_WIDTH));
+        const { ns, ne } = newDates();
+        ghostLabel.setAttribute("x", gx);
+        ghostLabel.textContent = isMilestone
+          ? util.formatDate(ns)
+          : `${util.formatDate(ns)} 〜 ${util.formatDate(ne)}`;
+      };
+
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        if (ghost) ghost.remove();
+        if (ghostLabel) ghostLabel.remove();
+        if (!moved) return; // ただのクリック → clickハンドラに任せる
+        if (deltaDays === 0) return; // 動かしたが元の位置 → 何もしない
+        const { ns, ne } = newDates();
+        onTaskUpdate(task, util.formatDate(ns), util.formatDate(ne));
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+  });
 }
 
 // ===== イナヅマ線描画 =====
@@ -469,13 +660,30 @@ function renderGantt(svgContainer, taskTree, snapshots, members, options) {
     height: layout.totalHeight,
   });
 
+  // 矢印マーカー定義（依存関係用）
+  const defs = svgEl("defs");
+  const marker = svgEl("marker", {
+    id: "dep-arrow",
+    markerWidth: 8, markerHeight: 8,
+    refX: 6, refY: 3, orient: "auto",
+    markerUnits: "strokeWidth",
+  });
+  marker.appendChild(svgEl("path", { d: "M0,0 L6,3 L0,6 Z", fill: "#5b7d9e" }));
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
   // 1. 日付ヘッダ
   svg.appendChild(renderDateHeader(layout, { dayWidth, viewStart, viewEnd, zoomLevel }));
 
   // 2. タスク行＆バー
   svg.appendChild(renderTaskRows(layout, { dayWidth }, members));
 
-  // 3. イナヅマ線（オプション）
+  // 3. 依存関係の矢印
+  if (options.dependencies && options.dependencies.length > 0) {
+    svg.appendChild(renderDependencyArrows(options.dependencies, layout));
+  }
+
+  // 4. イナヅマ線（オプション）
   if (options.showInazuma && snapshots.length > 0) {
     svg.appendChild(renderInazumaLines(snapshots, layout, {
       dayWidth, viewStart,
@@ -485,15 +693,21 @@ function renderGantt(svgContainer, taskTree, snapshots, members, options) {
 
   svgContainer.appendChild(svg);
 
-  // クリックイベント
+  // クリックイベント（ドラッグ直後のclickは無視）
   if (options.onTaskClick) {
     svg.querySelectorAll("[data-task-id]").forEach(el => {
       el.addEventListener("click", (e) => {
+        if (el._dragConsumed) { el._dragConsumed = false; return; }
         const id = Number(el.dataset.taskId);
         const task = layout.tasks.find(t => t.id === id);
         if (task) options.onTaskClick(task);
       });
     });
+  }
+
+  // ドラッグによる日付変更
+  if (options.onTaskUpdate) {
+    setupDragInteraction(svg, layout, { dayWidth, onTaskUpdate: options.onTaskUpdate });
   }
 
   return { layout };

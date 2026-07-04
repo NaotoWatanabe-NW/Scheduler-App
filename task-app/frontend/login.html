@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Task App - ログイン</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20260704">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Task App</h1>
+  </header>
+
+  <main class="container container--narrow">
+    <div class="card login-card">
+      <h2 id="login-title">ログイン</h2>
+      <form id="login-form">
+        <div class="form-row">
+          <label>ユーザー名</label>
+          <input type="text" name="username" required maxlength="100" autocomplete="username">
+        </div>
+        <div class="form-row">
+          <label>パスワード（4文字以上）</label>
+          <input type="password" name="password" required minlength="4" maxlength="200"
+                 autocomplete="current-password">
+        </div>
+        <div class="login-card__error" id="login-error"></div>
+        <div class="login-card__actions">
+          <button type="submit" class="btn btn--primary" id="btn-login">ログイン</button>
+        </div>
+      </form>
+      <div class="login-card__switch">
+        <span id="switch-text">アカウントがない場合:</span>
+        <a href="#" id="switch-mode">新規登録</a>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/js/util.js?v=20260704"></script>
+  <script src="/static/js/api.js?v=20260704"></script>
+  <script src="/static/js/login.js?v=20260704"></script>
+</body>
+</html>

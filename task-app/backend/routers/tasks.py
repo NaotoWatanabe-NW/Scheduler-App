@@ -6,11 +6,24 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from .. import models, schemas
+from ..services.auth_service import get_current_user, get_owned_project
 
 router = APIRouter(tags=["tasks"])
 
 
 # ===== ヘルパー =====
+
+def _get_owned_task(db: Session, task_id: int, user: models.User) -> models.Task:
+    """ログインユーザーのプロジェクトに属するタスクを取得（他人のものは404）"""
+    task = (
+        db.query(models.Task)
+        .join(models.Project, models.Task.project_id == models.Project.id)
+        .filter(models.Task.id == task_id, models.Project.owner_id == user.id)
+        .first()
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 def _validate_assignee(db: Session, assignee_id: Optional[int]):
     """担当者が存在するかチェック"""
@@ -75,6 +88,30 @@ def _record_progress_history(db: Session, task: models.Task):
     db.add(history)
 
 
+def _recompute_ancestor_progress(db: Session, parent_id: Optional[int]):
+    """親タスクの進捗を子タスクの平均から自動計算する（祖先へ連鎖）。
+    全ての子が100%になると親も100%（完了）になり、
+    子が未完了に戻ると親の完了も解除される。コミットは呼び出し側。"""
+    while parent_id is not None:
+        parent = db.query(models.Task).filter(models.Task.id == parent_id).first()
+        if not parent:
+            break
+        children = (
+            db.query(models.Task.progress)
+            .filter(models.Task.parent_task_id == parent_id)
+            .all()
+        )
+        if not children:
+            break
+        computed = round(sum(c[0] for c in children) / len(children))
+        if parent.progress != computed:
+            parent.progress = computed
+            _record_progress_history(db, parent)
+            # autoflush=False のため明示的にflush（次の祖先が最新値を読めるように）
+            db.flush()
+        parent_id = parent.parent_task_id
+
+
 def _build_task_tree(tasks: List[models.Task]) -> List[dict]:
     """フラットなタスクリストを階層構造に組み立てる。
     並び順は同階層内で start_date 昇順。"""
@@ -124,6 +161,7 @@ def list_todo_tasks(
     project_id: Optional[int] = None,
     today: Optional[date] = None,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
     """進捗100%未満かつ開始日が今日以前のタスクを横断的に返す。
     完了済みプロジェクトのタスクは除外。
@@ -136,6 +174,7 @@ def list_todo_tasks(
         db.query(models.Task, models.Project.name.label("project_name"))
         .join(models.Project, models.Task.project_id == models.Project.id)
         .filter(
+            models.Project.owner_id == user.id,    # 自分のプロジェクトのみ
             models.Project.is_completed == False,  # 完了プロジェクトを除外
             models.Task.progress < 100,
             models.Task.start_date <= today,
@@ -190,11 +229,13 @@ def list_todo_tasks(
     "/api/projects/{project_id}/tasks",
     response_model=List[schemas.TaskWithChildren],
 )
-def list_tasks(project_id: int, db: Session = Depends(get_db)):
+def list_tasks(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     """プロジェクト配下のタスクを階層構造で返す"""
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(db, project_id, user)
 
     tasks = (
         db.query(models.Task)
@@ -215,10 +256,9 @@ def create_task(
     project_id: int,
     payload: schemas.TaskCreate,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(db, project_id, user)
 
     _validate_assignee(db, payload.assignee_id)
     _validate_parent_task(db, project_id, payload.parent_task_id)
@@ -229,6 +269,8 @@ def create_task(
 
     # 初期進捗を履歴に記録
     _record_progress_history(db, task)
+    # 親タスクの進捗を再計算
+    _recompute_ancestor_progress(db, task.parent_task_id)
 
     db.commit()
     db.refresh(task)
@@ -238,11 +280,12 @@ def create_task(
 # ===== タスク取得 =====
 
 @router.get("/api/tasks/{task_id}", response_model=schemas.TaskOut)
-def get_task(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(models.Task).filter(models.Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
+def get_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    return _get_owned_task(db, task_id, user)
 
 
 # ===== タスク更新 =====
@@ -252,21 +295,28 @@ def update_task(
     task_id: int,
     payload: schemas.TaskUpdate,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
-    task = db.query(models.Task).filter(models.Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = _get_owned_task(db, task_id, user)
 
     _validate_assignee(db, payload.assignee_id)
     _validate_parent_task(db, task.project_id, payload.parent_task_id, self_task_id=task_id)
 
     old_progress = task.progress
+    old_parent_id = task.parent_task_id
     for k, v in payload.model_dump().items():
         setattr(task, k, v)
 
     # 進捗が変わった場合のみ履歴に記録
     if task.progress != old_progress:
         _record_progress_history(db, task)
+
+    # 親タスクの進捗を再計算（進捗変更・親付け替えの両方に対応）
+    if task.progress != old_progress or task.parent_task_id != old_parent_id:
+        db.flush()
+        _recompute_ancestor_progress(db, task.parent_task_id)
+        if old_parent_id != task.parent_task_id:
+            _recompute_ancestor_progress(db, old_parent_id)
 
     db.commit()
     db.refresh(task)
@@ -280,17 +330,15 @@ def move_task(
     task_id: int,
     payload: schemas.TaskMoveRequest,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
     """タスクと全子孫を別プロジェクトへ移動する。移動したタスクの親タスク参照はクリアされる。"""
-    task = db.query(models.Task).filter(models.Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = _get_owned_task(db, task_id, user)
     if task.project_id == payload.target_project_id:
         raise HTTPException(status_code=400, detail="Task is already in the target project")
 
-    target = db.query(models.Project).filter(models.Project.id == payload.target_project_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Target project not found")
+    # 移動先も自分のプロジェクトであること
+    get_owned_project(db, payload.target_project_id, user)
 
     # 子孫をすべて収集（BFS）
     all_ids: List[int] = []
@@ -305,11 +353,25 @@ def move_task(
         )
         queue.extend(row[0] for row in children)
 
+    # プロジェクトを跨ぐことになる依存関係は解除（ツリー内部の依存は維持）
+    db.query(models.TaskDependency).filter(
+        models.TaskDependency.predecessor_id.in_(all_ids),
+        ~models.TaskDependency.successor_id.in_(all_ids),
+    ).delete(synchronize_session=False)
+    db.query(models.TaskDependency).filter(
+        models.TaskDependency.successor_id.in_(all_ids),
+        ~models.TaskDependency.predecessor_id.in_(all_ids),
+    ).delete(synchronize_session=False)
+
     # 一括更新：project_id を書き換え、ルートタスクの parent_task_id をクリア
+    old_parent_id = task.parent_task_id
     db.query(models.Task).filter(models.Task.id.in_(all_ids)).update(
         {"project_id": payload.target_project_id}, synchronize_session=False
     )
     task.parent_task_id = None
+    db.flush()
+    # 移動元の親の進捗を再計算
+    _recompute_ancestor_progress(db, old_parent_id)
 
     db.commit()
     db.refresh(task)
@@ -319,11 +381,17 @@ def move_task(
 # ===== タスク削除 =====
 
 @router.delete("/api/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(models.Task).filter(models.Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+def delete_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    task = _get_owned_task(db, task_id, user)
+    parent_id = task.parent_task_id
     db.delete(task)
+    db.flush()
+    # 残った兄弟から親の進捗を再計算
+    _recompute_ancestor_progress(db, parent_id)
     db.commit()
     return None
 
@@ -334,10 +402,12 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     "/api/tasks/{task_id}/history",
     response_model=List[schemas.ProgressHistoryOut],
 )
-def get_task_history(task_id: int, db: Session = Depends(get_db)):
-    task = db.query(models.Task).filter(models.Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+def get_task_history(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _get_owned_task(db, task_id, user)
     return (
         db.query(models.TaskProgressHistory)
         .filter(models.TaskProgressHistory.task_id == task_id)

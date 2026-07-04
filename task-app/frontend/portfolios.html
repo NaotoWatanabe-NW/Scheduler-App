@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Task App - 統合プロジェクト</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20260704">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Task App</h1>
+    <nav>
+      <a href="/">プロジェクト</a>
+      <a href="/portfolios">統合</a>
+      <a href="/todo">ToDo</a>
+      <a href="/members">メンバー</a>
+      <a href="/templates">テンプレート</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="toolbar">
+      <h2>統合プロジェクト</h2>
+      <button class="btn btn--primary" id="btn-new-portfolio">+ 新規統合プロジェクト</button>
+    </div>
+
+    <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">
+      複数プロジェクトの進捗を1枚のガントチャートにまとめて表示します（閲覧専用）。
+      各プロジェクトは最早開始日〜最遅終了日の1本のバーになり、
+      進捗点は「最も遅れているタスク」を基準に置かれます。
+    </div>
+
+    <div id="portfolio-list">
+      <div class="empty-state">読み込み中...</div>
+    </div>
+  </main>
+
+  <div id="modal-mount"></div>
+
+  <script src="/static/js/util.js?v=20260704"></script>
+  <script src="/static/js/api.js?v=20260704"></script>
+  <script src="/static/js/portfolios.js?v=20260704"></script>
+</body>
+</html>

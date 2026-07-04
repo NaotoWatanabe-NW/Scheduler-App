@@ -6,16 +6,19 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from .. import models, schemas
+from ..services.auth_service import get_current_user, get_owned_project
 
 router = APIRouter(prefix="/api/projects/{project_id}/snapshots", tags=["snapshots"])
 
 
 @router.get("", response_model=List[schemas.SnapshotOut])
-def list_snapshots(project_id: int, db: Session = Depends(get_db)):
+def list_snapshots(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     """プロジェクトのスナップショット一覧を新しい順で返す"""
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(db, project_id, user)
 
     return (
         db.query(models.ProgressSnapshot)
@@ -30,12 +33,11 @@ def create_snapshot(
     project_id: int,
     payload: schemas.SnapshotCreate,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
     """手動でスナップショットを作成。現在の各タスクの progress をそのまま記録する。
     snapshot_date 未指定なら今日。同じ日付のスナップショットがあれば上書き。"""
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(db, project_id, user)
 
     snap_date = payload.snapshot_date or date.today()
 
@@ -80,8 +82,10 @@ def delete_snapshot(
     project_id: int,
     snapshot_id: int,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
     """スナップショットを個別に削除"""
+    get_owned_project(db, project_id, user)
     snapshot = (
         db.query(models.ProgressSnapshot)
         .filter(

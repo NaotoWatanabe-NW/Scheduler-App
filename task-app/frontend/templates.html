@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Task App - テンプレート</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20260704">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Task App</h1>
+    <nav>
+      <a href="/">プロジェクト</a>
+      <a href="/portfolios">統合</a>
+      <a href="/todo">ToDo</a>
+      <a href="/members">メンバー</a>
+      <a href="/templates">テンプレート</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="toolbar">
+      <h2>タスクテンプレート</h2>
+      <button class="btn btn--primary" id="btn-new-template">+ 新規テンプレート</button>
+    </div>
+
+    <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">
+      定型のタスク一式（タスク・子タスク・説明・必要日数）を登録しておくと、
+      プロジェクト画面の「テンプレートから追加」で開始日を指定するだけで日付が自動計算されます。
+    </div>
+
+    <div id="template-list">
+      <div class="empty-state">読み込み中...</div>
+    </div>
+  </main>
+
+  <div id="modal-mount"></div>
+
+  <script src="/static/js/util.js?v=20260704"></script>
+  <script src="/static/js/api.js?v=20260704"></script>
+  <script src="/static/js/templates.js?v=20260704"></script>
+</body>
+</html>

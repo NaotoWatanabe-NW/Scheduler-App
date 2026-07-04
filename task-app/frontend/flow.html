@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Task App - フロー図</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20260704">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Task App</h1>
+    <nav>
+      <a href="/">プロジェクト</a>
+      <a href="/portfolios">統合</a>
+      <a href="/todo">ToDo</a>
+      <a href="/members">メンバー</a>
+      <a href="/templates">テンプレート</a>
+    </nav>
+  </header>
+
+  <main class="container container--wide">
+    <div class="toolbar">
+      <div class="toolbar__left">
+        <a href="#" id="link-back" class="btn btn--sm">← ガントチャート</a>
+        <h2 id="project-title" style="margin:0">読み込み中...</h2>
+      </div>
+      <div class="toolbar__right">
+        <button class="btn btn--sm" id="btn-export-png" title="フロー図をPNG画像で保存">PNG出力</button>
+      </div>
+    </div>
+
+    <div style="font-size:12px;color:var(--color-text-muted);margin-bottom:12px;">
+      タスクの依存関係（先行→後続）を作業フローとして可視化しています。
+      矢印の順に作業を進めます。カードをクリックするとタスク編集に移動します。
+      依存関係はガントチャート画面のタスク編集モーダル「先行タスク」で登録できます。
+    </div>
+
+    <div class="card flow-container">
+      <div id="flow-chart"><div class="empty-state">読み込み中...</div></div>
+    </div>
+
+    <div id="flow-isolated"></div>
+  </main>
+
+  <script src="/static/js/util.js?v=20260704"></script>
+  <script src="/static/js/api.js?v=20260704"></script>
+  <script src="/static/js/flow.js?v=20260704"></script>
+</body>
+</html>

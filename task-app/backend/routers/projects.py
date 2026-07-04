@@ -7,11 +7,9 @@ from sqlalchemy import func
 
 from ..database import get_db
 from .. import models, schemas
+from ..services.auth_service import get_current_user, get_owned_project
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
-
-# 将来の認証用：現状は固定オーナーID
-CURRENT_OWNER_ID = 1
 
 
 def _compute_effective_dates(db: Session, project: models.Project):
@@ -58,11 +56,12 @@ def _to_response(db: Session, project: models.Project) -> dict:
 def list_projects(
     include_completed: bool = False,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
-    """プロジェクト一覧。デフォルトは未完了のみ。
+    """ログインユーザーのプロジェクト一覧。デフォルトは未完了のみ。
     include_completed=true で完了済みも含めて返す。"""
     query = db.query(models.Project).filter(
-        models.Project.owner_id == CURRENT_OWNER_ID
+        models.Project.owner_id == user.id
     )
     if not include_completed:
         query = query.filter(models.Project.is_completed == False)
@@ -71,9 +70,13 @@ def list_projects(
 
 
 @router.post("", response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
-def create_project(payload: schemas.ProjectCreate, db: Session = Depends(get_db)):
+def create_project(
+    payload: schemas.ProjectCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
     project = models.Project(
-        owner_id=CURRENT_OWNER_ID,
+        owner_id=user.id,
         **payload.model_dump(),
     )
     db.add(project)
@@ -83,10 +86,12 @@ def create_project(payload: schemas.ProjectCreate, db: Session = Depends(get_db)
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectOut)
-def get_project(project_id: int, db: Session = Depends(get_db)):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def get_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    project = get_owned_project(db, project_id, user)
     return _to_response(db, project)
 
 
@@ -95,10 +100,9 @@ def update_project(
     project_id: int,
     payload: schemas.ProjectUpdate,
     db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
 ):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project(db, project_id, user)
     for k, v in payload.model_dump().items():
         setattr(project, k, v)
     db.commit()
@@ -107,10 +111,12 @@ def update_project(
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: int, db: Session = Depends(get_db)):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def delete_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    project = get_owned_project(db, project_id, user)
     db.delete(project)
     db.commit()
     return None

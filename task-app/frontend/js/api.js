@@ -9,6 +9,10 @@ const api = {
     if (body !== null) opts.body = JSON.stringify(body);
     const res = await fetch(`/api${path}`, opts);
     if (!res.ok) {
+      // 未ログイン（セッション切れ）はログインページへ（ログイン画面自身は除く）
+      if (res.status === 401 && !location.pathname.startsWith("/login") && !path.startsWith("/auth/")) {
+        location.href = "/login";
+      }
       const text = await res.text();
       throw new Error(`API ${method} ${path} failed: ${res.status} ${text}`);
     }

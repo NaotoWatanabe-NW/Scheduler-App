@@ -30,6 +30,9 @@ function openTaskModal(options) {
     .filter(t => !excluded.has(t.id))
     .map(t => ({ id: t.id, name: t.name }));
 
+  // 子タスクを持つ場合、進捗は子から自動計算されるため編集不可にする
+  const hasChildTasks = isEdit && allTasks.some(t => t.parent_task_id === task.id);
+
   mount.innerHTML = `
     <div class="modal-overlay">
       <div class="modal">
@@ -61,9 +64,9 @@ function openTaskModal(options) {
           </div>
           <div class="form-row__pair">
             <div class="form-row">
-              <label>進捗 (%)</label>
+              <label>進捗 (%)${hasChildTasks ? "（子タスクから自動計算）" : ""}</label>
               <input type="number" name="progress" min="0" max="100"
-                     value="${isEdit ? task.progress : 0}">
+                     value="${isEdit ? task.progress : 0}" ${hasChildTasks ? "disabled" : ""}>
             </div>
             <div class="form-row">
               <label>担当者</label>
@@ -89,6 +92,15 @@ function openTaskModal(options) {
                    ${isEdit && task.is_milestone ? "checked" : ""}>
             <label for="is-milestone">マイルストーン</label>
           </div>
+          ${isEdit ? `
+          <div class="form-row" id="deps-section">
+            <label>先行タスク（このタスクの前に終わっているべきタスク）</label>
+            <ul class="dep-list" id="dep-list"><li class="dep-list__loading">読み込み中...</li></ul>
+            <div class="dep-add">
+              <select id="dep-select"></select>
+              <button type="button" class="btn btn--sm" id="dep-add-btn">追加</button>
+            </div>
+          </div>` : ""}
           <div class="modal__footer">
             ${isEdit ? `<button type="button" class="btn btn--danger" id="btn-delete">削除</button>` : ""}
             ${isEdit ? `<button type="button" class="btn btn--secondary" id="btn-move">別プロジェクトへ移動</button>` : ""}
@@ -100,7 +112,12 @@ function openTaskModal(options) {
     </div>
   `;
 
-  const close = () => { mount.innerHTML = ""; };
+  // 保存・削除・依存関係変更のいずれかがあれば、モーダルを閉じるときに再読込する
+  let needsRefresh = false;
+  const close = () => {
+    mount.innerHTML = "";
+    if (needsRefresh && onSaved) onSaved();
+  };
   document.getElementById("modal-close").addEventListener("click", close);
   document.getElementById("modal-cancel").addEventListener("click", close);
 
@@ -110,15 +127,80 @@ function openTaskModal(options) {
       try {
         await api.del(`/tasks/${task.id}`);
         util.toast("削除しました");
+        needsRefresh = true;
         close();
-        if (onSaved) onSaved();
       } catch (e) {
         util.toast("削除エラー: " + e.message);
       }
     });
 
     document.getElementById("btn-move").addEventListener("click", async () => {
-      await openMoveProjectDialog({ task, onMoved: () => { close(); if (onSaved) onSaved(); } });
+      await openMoveProjectDialog({ task, onMoved: () => { needsRefresh = true; close(); } });
+    });
+
+    // ===== 先行タスク（依存関係）管理 =====
+    const depListEl = document.getElementById("dep-list");
+    const depSelectEl = document.getElementById("dep-select");
+    let deps = [];
+
+    const taskName = (id) => {
+      const t = allTasks.find(x => x.id === id);
+      return t ? t.name : `タスク#${id}`;
+    };
+
+    const renderDeps = () => {
+      const preds = deps.filter(d => d.successor_id === task.id);
+      depListEl.innerHTML = preds.length
+        ? preds.map(d => `
+            <li class="dep-list__item">
+              <span>${util.escapeHtml(taskName(d.predecessor_id))}</span>
+              <button type="button" class="dep-remove" data-dep-id="${d.id}" title="この依存を解除">×</button>
+            </li>`).join("")
+        : `<li class="dep-list__empty">なし</li>`;
+
+      // 追加候補: 自分以外かつ未登録のタスク（循環はサーバ側で検証）
+      const usedIds = new Set(preds.map(d => d.predecessor_id));
+      const candidates = allTasks.filter(t => t.id !== task.id && !usedIds.has(t.id));
+      depSelectEl.innerHTML = candidates
+        .map(t => `<option value="${t.id}">${util.escapeHtml(t.name)}</option>`)
+        .join("");
+      depSelectEl.disabled = candidates.length === 0;
+
+      depListEl.querySelectorAll(".dep-remove").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          try {
+            await api.del(`/dependencies/${btn.dataset.depId}`);
+            needsRefresh = true;
+            await loadDeps();
+          } catch (e) {
+            util.toast("解除エラー: " + e.message);
+          }
+        });
+      });
+    };
+
+    const loadDeps = async () => {
+      deps = await api.get(`/projects/${task.project_id}/dependencies`);
+      renderDeps();
+    };
+
+    document.getElementById("dep-add-btn").addEventListener("click", async () => {
+      const predId = Number(depSelectEl.value);
+      if (!predId) return;
+      try {
+        await api.post(`/projects/${task.project_id}/dependencies`, {
+          predecessor_id: predId,
+          successor_id: task.id,
+        });
+        needsRefresh = true;
+        await loadDeps();
+      } catch (e) {
+        util.toast("追加エラー: " + e.message);
+      }
+    });
+
+    loadDeps().catch(() => {
+      depListEl.innerHTML = `<li class="dep-list__empty">依存関係の読み込みに失敗しました</li>`;
     });
   }
 
@@ -130,7 +212,8 @@ function openTaskModal(options) {
       description: fd.get("description").trim() || null,
       start_date: fd.get("start_date"),
       end_date: fd.get("end_date"),
-      progress: Number(fd.get("progress")) || 0,
+      // disabled入力はFormDataに含まれないため、親タスクは現在値を維持
+      progress: hasChildTasks ? task.progress : (Number(fd.get("progress")) || 0),
       assignee_id: fd.get("assignee_id") ? Number(fd.get("assignee_id")) : null,
       parent_task_id: fd.get("parent_task_id") ? Number(fd.get("parent_task_id")) : null,
       is_milestone: fd.get("is_milestone") === "on",
@@ -150,8 +233,8 @@ function openTaskModal(options) {
         await api.post(`/projects/${projectId}/tasks`, payload);
         util.toast("作成しました");
       }
+      needsRefresh = true;
       close();
-      if (onSaved) onSaved();
     } catch (err) {
       util.toast("エラー: " + err.message);
     }

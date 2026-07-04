@@ -10,8 +10,10 @@
     <h1>Task App</h1>
     <nav>
       <a href="/">プロジェクト</a>
+      <a href="/portfolios">統合</a>
       <a href="/todo">ToDo</a>
       <a href="/members">メンバー</a>
+      <a href="/templates">テンプレート</a>
     </nav>
   </header>
 
@@ -22,8 +24,11 @@
         <h2 id="project-title" style="margin:0">読み込み中...</h2>
       </div>
       <div class="toolbar__right">
+        <button class="btn btn--sm" id="btn-export-png" title="ガントチャートをPNG画像で保存">PNG出力</button>
+        <a class="btn btn--sm" id="link-flow" href="#">フロー図</a>
         <button class="btn btn--sm" id="btn-snapshots">スナップショット管理</button>
         <button class="btn btn--sm" id="btn-snapshot">今すぐスナップ</button>
+        <button class="btn btn--sm" id="btn-apply-template">テンプレートから追加</button>
         <button class="btn btn--primary btn--sm" id="btn-new-task">+ タスク追加</button>
       </div>
     </div>
@@ -46,6 +51,7 @@
           <input type="checkbox" id="toggle-inazuma" checked>
           イナヅマ線表示
         </label>
+        <button type="button" class="btn btn--sm" id="toggle-completed-tasks" title="進捗100%のタスクの表示/非表示を切り替え">完了タスク: 非表示</button>
         <label>表示本数
           <input type="number" id="snapshot-count" value="4" min="1" max="20">
         </label>
@@ -70,6 +76,14 @@
       <div class="gantt-legend__item">
         <span class="gantt-legend__inazuma"></span>
         <span>イナヅマ線（左に凹む=遅延、右に出る=先行）</span>
+      </div>
+      <div class="gantt-legend__item">
+        <span class="gantt-legend__swatch" style="background:#888780;opacity:0.4;border:1.8px solid #e03131"></span>
+        <span>遅延タスク（計画進捗より遅れ）</span>
+      </div>
+      <div class="gantt-legend__item">
+        <span class="gantt-legend__dep-arrow">→</span>
+        <span>依存関係（先行→後続）／バーはドラッグで移動・端をつまんで伸縮</span>
       </div>
     </div>
 

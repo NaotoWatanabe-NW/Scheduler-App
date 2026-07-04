@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# SQLite database (auto-created on first run)
+task-app/data/*.db
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
